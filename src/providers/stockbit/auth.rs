@@ -156,7 +156,12 @@ impl SessionStore {
             std::fs::create_dir_all(parent)?;
         }
         let body = serde_json::to_string_pretty(session)?;
-        let tmp = self.path.with_extension("json.tmp");
+        // Per-process temp name: two idx processes (CLI and MCP server) can
+        // refresh at the same time, and a shared name lets one rename the
+        // other's half-written file into place.
+        let tmp = self
+            .path
+            .with_extension(format!("json.tmp{}", std::process::id()));
         std::fs::write(&tmp, body.as_bytes())?;
         #[cfg(unix)]
         {
