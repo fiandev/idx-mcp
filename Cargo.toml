@@ -1,11 +1,14 @@
 [package]
 name = "ihsg-cli"
-version = "0.8.1"
+version = "0.8.2"
 edition = "2021"
 rust-version = "1.88"
 description = "Indonesian stock market (IDX / IHSG) analysis: the `idx` CLI and MCP server for people and AI agents, free public data"
 license = "MIT"
-authors = ["Midori Research <desk@midoriresearch.com>"]
+authors = [
+  "Midori Research <desk@midoriresearch.com>",
+  "Alfiansa <contact@fiandev.com>",
+]
 repository = "https://github.com/fzn0x/idx"
 homepage = "https://ihsg.midoriresearch.com"
 documentation = "https://github.com/fzn0x/idx#readme"
