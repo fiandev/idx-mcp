@@ -140,6 +140,7 @@ idx completions powershell | Out-String | Invoke-Expression
 | `market members [--search S]` | Exchange members (broker codes) with names and licences |
 | `ownership changes --from D --to D [--symbol S] [--min-change PP] [--limit N --offset N]` | New holders, exits and position changes between two months, paged, with a summary (counts, foreign vs local net, by investor type, issuer flow, top moves) over every match |
 | `ownership foreign [SYMBOL] [--from D --to D]` | Disclosed foreign (KSEI `A`) vs local stake: one issuer month by month, or every issuer's change between two months |
+| `stockbit login\|status\|logout\|orderbook` | Opt-in realtime via your own Stockbit session: `login` opens a browser and captures the session, `status` shows expiry (no token values), `orderbook` prints the live depth ladder and its foreign flow. Not in the `auto` chain. See [docs/stockbit.md](docs/stockbit.md) |
 | `watch [add\|rm\|list\|clear\|returns]` | Plain-text watchlist next to the config; `idx watch` quotes it |
 | `ownership releases\|discover\|path` | Imported months, files published on idx.co.id, database path |
 | `mcp [--http ADDR --token T]` · `mcp setup <client>` | MCP server over stdio or streamable HTTP, and the registration recipe for 25 agent harnesses. 36 tools: `idx_brief`, `idx_market`, `idx_quote`, `idx_history`, `idx_profile`, `idx_financials`, `idx_earnings`, `idx_dividends`, `idx_returns`, `idx_fundamental`, `idx_technical`, `idx_compare`, `idx_screen`, `idx_news`, `idx_sentiment`, `idx_corporate_actions`, `idx_foreign`, `idx_instruments`, `idx_market_foreign`, `idx_market_brokers`, `idx_indices`, `idx_calendar`, `idx_holidays`, `idx_members`, `idx_broker`, `idx_bandar`, `idx_bandar_screen`, `idx_bandar_broker`, `idx_ownership_ticker`, `idx_ownership_entity`, `idx_ownership_changes`, `idx_ownership_foreign`, `idx_ownership_releases`, `idx_orderbook`, `idx_stockbit_status`, `idx_stockbit_login` |
@@ -288,7 +289,8 @@ browser, no install: `brief BBCA`, `quote BBCA,BBRI`, `returns BBCA BBRI`,
 `screen pe<10,div>5,mcap>5T --sort div`, `news ASII`, `ownership ticker BBCA`,
 `ownership foreign`, `bandar BBCA --daily`, `bandar screen --preset
 big-accumulation`, `bandar broker YP`, `actions BBCA`, `holidays --upcoming`,
-`list --search bank`, `members`, and `tools` (all 33 MCP tools as buttons). The idx.co.id
+`list --search bank`, `members`, and `tools` (all 36 MCP tools as buttons;
+the eight Stockbit and idx.co.id ones are CLI and MCP only). The idx.co.id
 commands (foreign flow, top brokers, the calendar, indices) are CLI and MCP
 only, because idx.co.id refuses requests from Cloudflare Workers. `quote` with one symbol also draws a price chart (1D, 5D,
 1M, 6M, YTD, 1Y, 5Y) with volume, the previous close and a crosshair readout.
@@ -331,11 +333,33 @@ can write it:
 
 ## Development
 
+Rust stable (1.88+; `rust-toolchain.toml` adds rustfmt and clippy) builds the
+CLI, the MCP server and the shared library. Node 18+ is needed only for the npm
+wrapper and `web/`.
+
 ```sh
-cargo build
+git clone https://github.com/fzn0x/idx && cd idx
+cargo build                                # target/debug/idx
+./target/debug/idx stocks quote BBCA,BBRI,TLKM
+./target/debug/idx -o json stocks quote BBCA | jq '.data[0].price'
+./target/debug/idx mcp                     # the same tools over stdio
+./target/debug/idx mcp setup --list        # registration recipe per agent
+
 cargo test                                 # recorded fixtures, no network
 cargo clippy --all-targets -- -D warnings
-./scripts/smoke.sh                         # live providers
+cargo fmt
+./scripts/smoke.sh                         # live providers, needs network
+./target/debug/idx -vv stocks quote BBCA   # -vv prints every request to stderr
+```
+
+The web terminal is a Cloudflare Worker with no build step:
+
+```sh
+cd web
+npm install
+npx wrangler dev                           # local, http://localhost:8787
+node --test test/*.mjs                     # worker and port tests
+npx wrangler d1 migrations apply idx --remote   # new tables first
 ```
 
 Architecture, conventions and "how to add a provider" live in

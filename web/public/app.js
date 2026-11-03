@@ -102,11 +102,27 @@ export function wrapScroll(node) {
   return frag;
 }
 
+/** Escapes a value for the few renderers that build markup instead of nodes. */
+export function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+/**
+ * Tagged template for `el(..., { html })`: the literal markup in the template
+ * stays as written, every interpolated value is escaped. Use it for the one or
+ * two spans where `el("b", …)` would be noisier; anything longer is easier to
+ * read as nodes.
+ */
+export function h(strings, ...values) {
+  return strings.reduce((out, s, i) => out + s + (i < values.length ? esc(values[i]) : ""), "");
+}
+
 export function el(tag, attrs = {}, children = []) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === "class") n.className = v;
     else if (k === "text") n.textContent = v;
+    // Only `h\`…\`` or another already-escaped string, never raw provider data.
     else if (k === "html") n.innerHTML = v;
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, v);

@@ -36,6 +36,21 @@ pub struct HttpOptions {
     pub allowed_hosts: Vec<String>,
 }
 
+/// Constant-time byte comparison. The bearer token is a shared secret, so the
+/// check must not reveal how many leading bytes matched. The length check
+/// short-circuits, which only exposes the token's length, not its content.
+fn ct_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 async fn auth(State(token): State<Arc<String>>, req: Request, next: Next) -> Response {
     if req.uri().path() == "/healthz" {
         return next.run(req).await;
@@ -45,7 +60,7 @@ async fn auth(State(token): State<Arc<String>>, req: Request, next: Next) -> Res
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
-        .is_some_and(|t| t.trim() == token.as_str());
+        .is_some_and(|t| ct_eq(t.trim(), token.as_str()));
     if ok {
         next.run(req).await
     } else {
@@ -246,5 +261,15 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK, "health check needs no token");
+    }
+
+    #[test]
+    fn bearer_token_comparison_is_exact() {
+        assert!(ct_eq("s3cret", "s3cret"));
+        assert!(!ct_eq("s3cret", "s3cres"));
+        assert!(!ct_eq("s3cret", "s3cret "));
+        assert!(!ct_eq("s3cret", "s3cre"));
+        assert!(!ct_eq("", "s3cret"));
+        assert!(ct_eq("", ""));
     }
 }

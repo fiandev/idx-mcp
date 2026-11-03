@@ -15,7 +15,7 @@ BIN=idx
 
 say() { printf '%s\n' "$*" >&2; }
 die() { say "install.sh: $*"; exit 1; }
-need() { command -v "$1" >/dev/null 2>&1 || die "需要 $1 (missing dependency: $1)"; }
+need() { command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1"; }
 # A server that accepts the connection and then sends nothing fails after a
 # minute instead of hanging the install.
 dl() { curl -fsSL --connect-timeout 20 --speed-limit 1 --speed-time 60 "$@"; }

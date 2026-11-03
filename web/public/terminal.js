@@ -1,5 +1,5 @@
 // The web terminal: parses CLI-shaped commands, calls /api, prints statements.
-import { api, fmt, table, wrapScroll, el, sparkline, signClass } from "/app.js";
+import { api, fmt, table, wrapScroll, el, h, sparkline, signClass } from "/app.js";
 import { priceChart } from "/chart.js";
 import { TOOLS, CLI_ONLY_REASON, byName } from "/tools.js";
 import { SHOW_MS, SLOW_MS, waitFor } from "/waits.js";
@@ -116,7 +116,7 @@ const R = {
   },
   profile(p) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>${p.name || p.symbol}</b>` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${p.name || p.symbol}</b>` }));
     frag.append(kv([["Sector", p.sector], ["Industry", p.industry], ["Exchange", p.exchange], ["Market cap", fmt.compact(p.market_cap)], ["Shares outstanding", fmt.int(p.shares_outstanding)], ["Employees", fmt.int(p.employees)], ["Headquarters", [p.city, p.country].filter(Boolean).join(", ") || null], ["Website", p.website]]));
     if (p.summary) frag.append(el("p", { class: "prose", text: p.summary }));
     if (p.directors?.length) frag.append(el("p", { class: "prose", text: `Board and management: ${p.directors.slice(0, 8).map((d) => d.title ? `${d.name} (${d.title})` : d.name).join("; ")}${p.directors.length > 8 ? "; …" : ""}` }));
@@ -124,13 +124,13 @@ const R = {
   },
   fundamentals(f) {
     const frag = document.createDocumentFragment();
-    const v = f.valuation, p = f.profitability, h = f.health, g = f.growth, d = f.dividend, a = f.analyst;
-    frag.append(el("p", { class: "prose", html: `<b>${f.name || f.symbol}</b> · ${f.sector || "—"}${f.industry ? " / " + f.industry : ""} · price ${fmt.price(f.price)} · 52w ${fmt.price(f.week52_low)} – ${fmt.price(f.week52_high)} · beta ${fmt.ratio(f.beta)}` }));
+    const v = f.valuation, p = f.profitability, hl = f.health, g = f.growth, d = f.dividend, a = f.analyst;
+    frag.append(el("p", { class: "prose", html: h`<b>${f.name || f.symbol}</b> · ${f.sector || "—"}${f.industry ? " / " + f.industry : ""} · price ${fmt.price(f.price)} · 52w ${fmt.price(f.week52_low)} – ${fmt.price(f.week52_high)} · beta ${fmt.ratio(f.beta)}` }));
     const grid = el("div", { class: "three" });
     const stmt = (title, pairs) => el("div", { class: "stmt" }, [el("h3", { class: "stmt-title", text: title }), kv(pairs)]);
     grid.append(
       stmt("Valuation", [["Market cap", fmt.compact(v.market_cap)], ["Enterprise value", fmt.compact(v.enterprise_value)], ["P/E trailing", fmt.ratio(v.pe_trailing)], ["P/E forward", fmt.ratio(v.pe_forward)], ["PEG", fmt.ratio(v.peg)], ["P/B", fmt.ratio(v.price_to_book)], ["P/S", fmt.ratio(v.price_to_sales)], ["EV/EBITDA", fmt.ratio(v.ev_to_ebitda)]]),
-      stmt("Profitability & health", [["ROE", pct(p.roe_pct)], ["ROA", pct(p.roa_pct)], ["Gross margin", pct(p.gross_margin_pct)], ["Operating margin", pct(p.operating_margin_pct)], ["Net margin", pct(p.net_margin_pct)], ["Debt / equity", x(h.debt_to_equity)], ["Current ratio", fmt.ratio(h.current_ratio)], ["Total cash", fmt.compact(h.total_cash)]]),
+      stmt("Profitability & health", [["ROE", pct(p.roe_pct)], ["ROA", pct(p.roa_pct)], ["Gross margin", pct(p.gross_margin_pct)], ["Operating margin", pct(p.operating_margin_pct)], ["Net margin", pct(p.net_margin_pct)], ["Debt / equity", x(hl.debt_to_equity)], ["Current ratio", fmt.ratio(hl.current_ratio)], ["Total cash", fmt.compact(hl.total_cash)]]),
       stmt("Growth, dividend, analysts", [["Revenue growth", fmt.pct(g.revenue_growth_pct)], ["Earnings growth", fmt.pct(g.earnings_growth_pct)], ["Dividend yield", pct(d.yield_pct)], ["Payout", pct(d.payout_ratio_pct)], ["Ex-dividend", d.ex_dividend_date], ["EPS (ttm)", fmt.price(f.per_share.eps_ttm)], ["Rating", a.recommendation ? a.recommendation.replace("_", " ") : null], ["Target mean", fmt.price(a.target_mean)]]),
     );
     frag.append(grid);
@@ -148,7 +148,7 @@ const R = {
     const ma = t.moving_averages;
     const vs = (v) => (v == null ? "—" : `${fmt.price(v)} (${fmt.pct(v ? ((t.price - v) / v) * 100 : null)})`);
     const cls = t.signal.label === "buy" ? "up" : t.signal.label === "sell" ? "dn" : "";
-    frag.append(el("p", { class: "prose", html: `<b>${t.name || t.symbol}</b> · ${t.candles_used} candles (${t.period}) · as of ${fmt.date(t.as_of)} · price ${fmt.price(t.price)} · 1d ${fmt.pct(t.change_pct_1d)} · 1m ${fmt.pct(t.change_pct_1m)} · 3m ${fmt.pct(t.change_pct_3m)} · 52w ${fmt.price(t.low_52w)} – ${fmt.price(t.high_52w)}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${t.name || t.symbol}</b> · ${t.candles_used} candles (${t.period}) · as of ${fmt.date(t.as_of)} · price ${fmt.price(t.price)} · 1d ${fmt.pct(t.change_pct_1d)} · 1m ${fmt.pct(t.change_pct_1m)} · 3m ${fmt.pct(t.change_pct_3m)} · 52w ${fmt.price(t.low_52w)} – ${fmt.price(t.high_52w)}` }));
     frag.append(el("p", { class: "prose" }, [el("span", { class: `pill ${cls}`, text: `${t.signal.label} ${t.signal.score > 0 ? "+" : ""}${t.signal.score}` }), ` · trend ${t.trend}`]));
     const grid = el("div", { class: "three" });
     const stmt = (title, pairs) => el("div", { class: "stmt" }, [el("h3", { class: "stmt-title", text: title }), kv(pairs)]);
@@ -178,7 +178,7 @@ const R = {
   },
   earnings(e) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>${e.name || e.symbol}</b> · EPS in ${e.currency || "IDR"}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${e.name || e.symbol}</b> · EPS in ${e.currency || "IDR"}` }));
     if (e.quarters.length) frag.append(wrapScroll(table([{ h: "Quarter", k: "period", l: true, cls: "sym" }, { h: "Period end", f: (q) => fmt.date(q.end_date), l: true }, { h: "Reported", f: (q) => fmt.date(q.reported_date), l: true }, { h: "EPS actual", f: (q) => fmt.price(q.eps_actual) }, { h: "EPS est.", f: (q) => fmt.price(q.eps_estimate) }, { h: "Surprise", f: (q) => fmt.pct(q.surprise_pct), cls: (q) => `num ${signClass(q.surprise_pct)}` }], e.quarters)));
     const re = [...e.yearly, ...e.quarterly];
     if (re.length) frag.append(wrapScroll(table([{ h: "Period", k: "period", l: true, cls: "sym" }, { h: "Revenue", f: (r) => fmt.compact(r.revenue) }, { h: "Earnings", f: (r) => fmt.compact(r.earnings) }, { h: "Margin", f: (r) => pct(r.profit_margin_pct) }], re)));
@@ -226,7 +226,7 @@ const R = {
   },
   dividends(h) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>${h.name || h.symbol}</b> · ${h.currency || "IDR"} · price ${fmt.price(h.price)} · TTM dividends ${h.ttm_total == null ? "—" : fmt.num(h.ttm_total, 2)} (${h.ttm_payments} payment${h.ttm_payments === 1 ? "" : "s"}) · TTM yield ${pct(h.ttm_yield_pct)} · ${h.consecutive_years} consecutive year${h.consecutive_years === 1 ? "" : "s"}${h.last ? ` · last ${h.last.date} ${fmt.num(h.last.amount, 2)}` : ""}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${h.name || h.symbol}</b> · ${h.currency || "IDR"} · price ${fmt.price(h.price)} · TTM dividends ${h.ttm_total == null ? "—" : fmt.num(h.ttm_total, 2)} (${h.ttm_payments} payment${h.ttm_payments === 1 ? "" : "s"}) · TTM yield ${pct(h.ttm_yield_pct)} · ${h.consecutive_years} consecutive year${h.consecutive_years === 1 ? "" : "s"}${h.last ? ` · last ${h.last.date} ${fmt.num(h.last.amount, 2)}` : ""}` }));
     if (!h.dividends.length) { frag.append(el("p", { class: "warn", text: "No dividend events reported by the source." })); return frag; }
     const grid = el("div", { class: "three" });
     grid.append(
@@ -257,7 +257,7 @@ const R = {
   },
   brief(b) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>${b.name || b.symbol}</b> · brief · ${fmt.wib(b.generated_at.replace("Z", "+00:00")).replace(" WIB", " UTC")}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${b.name || b.symbol}</b> · brief · ${fmt.wib(b.generated_at.replace("Z", "+00:00")).replace(" WIB", " UTC")}` }));
     frag.append(el("ul", { class: "reasons" }, b.key_points.map((k) => el("li", { text: k }))));
     if (b.fundamentals) { frag.append(el("h3", { class: "stmt-title", text: "Fundamentals" })); frag.append(R.fundamentals(b.fundamentals)); }
     if (b.technical) { frag.append(el("h3", { class: "stmt-title", text: "Technical" })); frag.append(R.technical(b.technical)); }
@@ -272,7 +272,7 @@ const R = {
     const frag = document.createDocumentFragment();
     if (r.points) {
       const last = r.points[r.points.length - 1];
-      frag.append(el("p", { class: "prose", html: `<b>${r.symbol}</b> · ${r.issuer_name || ""} · disclosed foreign stake ${pct(last.foreign_pct)} of the ${pct(last.listed_pct)} listed above 1 % as of ${last.as_of} · ${r.points.length} release${r.points.length === 1 ? "" : "s"}` }));
+      frag.append(el("p", { class: "prose", html: h`<b>${r.symbol}</b> · ${r.issuer_name || ""} · disclosed foreign stake ${pct(last.foreign_pct)} of the ${pct(last.listed_pct)} listed above 1 % as of ${last.as_of} · ${r.points.length} release${r.points.length === 1 ? "" : "s"}` }));
       frag.append(wrapScroll(table([{ h: "As of", k: "as_of", l: true, cls: "sym" }, { h: "Foreign %", f: (p) => pct(p.foreign_pct) }, { h: "Δ pp", f: (p) => fmt.change(p.foreign_change_pp), cls: (p) => `num ${signClass(p.foreign_change_pp)}` }, { h: "Local %", f: (p) => pct(p.local_pct) }, { h: "Foreign holders", k: "foreign_holders" }, { h: "Local holders", k: "local_holders" }, { h: "Listed %", f: (p) => pct(p.listed_pct) }], r.points)));
     } else {
       frag.append(el("p", { class: "prose", text: `Disclosed foreign stake ${r.from} → ${r.to} · ${r.issuers} issuers · ${r.inflows} inflows · ${r.outflows} outflows · net ${fmt.change(r.net_pp)} pp` }));
@@ -368,9 +368,9 @@ const R = {
     ];
     for (const s of list) {
       const range = s.from === s.to ? s.from : `${s.from} to ${s.to}`;
-      frag.append(el("p", { class: "prose", html: `<b>${s.symbol}</b>${s.name ? ` · ${s.name}` : ""} · ${range} · ${s.investor} investors · ${s.board === "all" ? "all boards" : `${s.board} board`}` }));
+      frag.append(el("p", { class: "prose", html: h`<b>${s.symbol}</b>${s.name ? ` · ${s.name}` : ""} · ${range} · ${s.investor} investors · ${s.board === "all" ? "all boards" : `${s.board} board`}` }));
       if (!s.buyers.length && !s.sellers.length) { frag.append(el("p", { class: "warn", text: `No trades from ${s.from} to ${s.to}.` })); continue; }
-      frag.append(el("p", { class: "prose", html: `Value ${fmt.compact(s.total_value)} · lots ${fmt.compact(s.total_lots)} · avg ${fmt.price(s.average_price)} · foreign net <span class="${signClass(s.foreign_net_value)}">${fmt.compact(s.foreign_net_value)}</span>` }));
+      frag.append(el("p", { class: "prose", html: h`Value ${fmt.compact(s.total_value)} · lots ${fmt.compact(s.total_lots)} · avg ${fmt.price(s.average_price)} · foreign net <span class="${signClass(s.foreign_net_value)}">${fmt.compact(s.foreign_net_value)}</span>` }));
       const grid = el("div", { class: "two" });
       grid.append(
         el("div", { class: "stmt" }, [el("h3", { class: "stmt-title", text: "Top buyers" }), wrapScroll(table(cols, s.buyers))]),
@@ -384,7 +384,7 @@ const R = {
   actions(c) {
     const frag = document.createDocumentFragment();
     const KIND = { cash_dividend: "cash dividend", stock_dividend: "stock dividend", stock_split: "stock split", reverse_split: "reverse split", bonus: "bonus shares", rights_issue: "rights issue", warrant: "warrant", other: "other" };
-    frag.append(el("p", { class: "prose", html: `<b>${c.symbol}</b>${c.name ? ` · ${c.name}` : ""} · since ${c.since}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${c.symbol}</b>${c.name ? ` · ${c.name}` : ""} · since ${c.since}` }));
     frag.append(el("h3", { class: "stmt-title", text: "Corporate actions" }));
     if (!c.actions.length) frag.append(el("p", { class: "warn", text: "None in this period." }));
     else frag.append(wrapScroll(table([
@@ -429,7 +429,7 @@ const R = {
   },
   bandarBroker(a) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>${a.code}</b>${a.name ? ` · ${a.name}` : ""} · ${a.period} (${a.from} to ${a.to}) · ${a.scanned} scanned, ${a.checked} with trades` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${a.code}</b>${a.name ? ` · ${a.name}` : ""} · ${a.period} (${a.from} to ${a.to}) · ${a.scanned} scanned, ${a.checked} with trades` }));
     frag.append(el("p", { class: "prose", text: `Visible buying ${fmt.compact(a.bought_value)} in ${a.bought.length} stocks · visible selling ${fmt.compact(a.sold_value)} in ${a.sold.length} stocks` }));
     const cols = [
       { h: "Symbol", k: "symbol", l: true, cls: "sym" }, { h: "Name", f: (r) => r.name || "—", l: true, cls: "name" },
@@ -458,7 +458,7 @@ const R = {
   },
   cliOnly(t) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>${t.tool}</b> · ${t.what}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${t.tool}</b> · ${t.what}` }));
     frag.append(el("pre", { text: `${t.cli}\n${t.cli.replace(/^idx /, "idx -o json ")}` }));
     const stockbit = t.tool === "idx_orderbook" || t.tool.startsWith("idx_stockbit");
     const reason = stockbit
@@ -469,7 +469,7 @@ const R = {
   },
   holidays(h) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>IDX trading holidays${h.year != null ? ` ${h.year}` : ""}</b>${h.trading_days != null ? ` · ${h.trading_days} trading days` : ""} · today ${h.today} is ${h.today_is_trading_day ? "a trading day" : "not a trading day"} · next trading day ${h.next_trading_day}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>IDX trading holidays${h.year != null ? ` ${h.year}` : ""}</b>${h.trading_days != null ? ` · ${h.trading_days} trading days` : ""} · today ${h.today} is ${h.today_is_trading_day ? "a trading day" : "not a trading day"} · next trading day ${h.next_trading_day}` }));
     if (!h.holidays.length) frag.append(el("p", { class: "warn", text: "No holidays listed." }));
     else frag.append(wrapScroll(table([
       { h: "Date", k: "date", l: true, cls: "sym" }, { h: "Day", k: "weekday", l: true },
@@ -490,7 +490,7 @@ const R = {
   },
   market(m) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>IHSG ${fmt.price(m.index?.price)}</b> ${fmt.change(m.index?.change)} (${fmt.pct(m.index?.change_pct)}) · advancing ${m.advancing} · declining ${m.declining} · unchanged ${m.unchanged} · ${m.quoted} quoted · snapshot ${fmt.wib(m.refreshed_at)} · ${m.market_open ? "market open" : "market closed"}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>IHSG ${fmt.price(m.index?.price)}</b> ${fmt.change(m.index?.change)} (${fmt.pct(m.index?.change_pct)}) · advancing ${m.advancing} · declining ${m.declining} · unchanged ${m.unchanged} · ${m.quoted} quoted · snapshot ${fmt.wib(m.refreshed_at)} · ${m.market_open ? "market open" : "market closed"}` }));
     if (m.index_tape.length > 1) frag.append(sparkline(m.index_tape, { cls: "spark" }));
     const grid = el("div", { class: "three" });
     const mk = (title, rows, valueCol) => el("div", { class: "stmt" }, [el("h3", { class: "stmt-title", text: title }), wrapScroll(table([{ h: "Symbol", k: "symbol", l: true, cls: "sym" }, { h: "Price", f: (r) => fmt.price(r.price) }, valueCol], rows))]);
@@ -501,7 +501,7 @@ const R = {
   },
   holders(h) {
     const frag = document.createDocumentFragment();
-    frag.append(el("p", { class: "prose", html: `<b>${h.symbol}</b> · ${h.issuer_name || ""} · holders above 1 % as of ${h.as_of} · ${h.holders.length} listed = ${pct(h.listed_pct)}` }));
+    frag.append(el("p", { class: "prose", html: h`<b>${h.symbol}</b> · ${h.issuer_name || ""} · holders above 1 % as of ${h.as_of} · ${h.holders.length} listed = ${pct(h.listed_pct)}` }));
     frag.append(wrapScroll(table([{ h: "#", f: (r, i) => "", l: true }, { h: "Holder", k: "holder", l: true, cls: "sym" }, { h: "Type", k: "investor_type", l: true }, { h: "L/A", k: "local_foreign", l: true }, { h: "Shares", f: (r) => fmt.int(r.shares_total) }, { h: "%", f: (r) => pct(r.pct) }], h.holders.map((r, i) => ({ ...r, n: i + 1 })))));
     return frag;
   },
