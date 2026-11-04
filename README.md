@@ -141,6 +141,7 @@ idx completions powershell | Out-String | Invoke-Expression
 | `ownership changes --from D --to D [--symbol S] [--min-change PP] [--limit N --offset N]` | New holders, exits and position changes between two months, paged, with a summary (counts, foreign vs local net, by investor type, issuer flow, top moves) over every match |
 | `ownership foreign [SYMBOL] [--from D --to D]` | Disclosed foreign (KSEI `A`) vs local stake: one issuer month by month, or every issuer's change between two months |
 | `stockbit login\|status\|logout\|orderbook` | Opt-in realtime via your own Stockbit session: `login` opens a browser and captures the session, `status` shows expiry (no token values), `orderbook` prints the live depth ladder and its foreign flow. Not in the `auto` chain. See [docs/stockbit.md](docs/stockbit.md) |
+| `stockbit monitor [SYMBOL] [--interval N] [--top N] [--trades N]` | Full-screen realtime board: intraday candle chart, top gainers and losers, and the running trade of the focused ticker, all on one refresh clock. `↑↓`/`tab`/`enter` move between them, `+`/`-` change the interval. Terminal only. See [docs/stockbit.md](docs/stockbit.md#the-monitor) |
 | `watch [add\|rm\|list\|clear\|returns]` | Plain-text watchlist next to the config; `idx watch` quotes it |
 | `ownership releases\|discover\|path` | Imported months, files published on idx.co.id, database path |
 | `mcp [--http ADDR --token T]` · `mcp setup <client>` | MCP server over stdio or streamable HTTP, and the registration recipe for 25 agent harnesses. 36 tools: `idx_brief`, `idx_market`, `idx_quote`, `idx_history`, `idx_profile`, `idx_financials`, `idx_earnings`, `idx_dividends`, `idx_returns`, `idx_fundamental`, `idx_technical`, `idx_compare`, `idx_screen`, `idx_news`, `idx_sentiment`, `idx_corporate_actions`, `idx_foreign`, `idx_instruments`, `idx_market_foreign`, `idx_market_brokers`, `idx_indices`, `idx_calendar`, `idx_holidays`, `idx_members`, `idx_broker`, `idx_bandar`, `idx_bandar_screen`, `idx_bandar_broker`, `idx_ownership_ticker`, `idx_ownership_entity`, `idx_ownership_changes`, `idx_ownership_foreign`, `idx_ownership_releases`, `idx_orderbook`, `idx_stockbit_status`, `idx_stockbit_login` |
@@ -149,6 +150,25 @@ idx completions powershell | Out-String | Invoke-Expression
 | `cache stats\|clear\|path` | Response cache management |
 | `completions <shell>` | bash, zsh, fish, powershell, elvish |
 | `version` | Version, build and default paths |
+
+### Charts
+
+The numeric `stocks` commands (`quote`, `history`, `returns`, `dividends`,
+`financials`, `earnings`, `compare`, `foreign` and `screen`) can draw a bar
+chart instead of the table:
+
+```sh
+idx stocks quote BBCA,BBRI,TLKM --chart bar --direction horizontal
+idx stocks returns BBCA BBRI --chart bar --direction vertical
+idx stocks returns BBCA BBRI --chart stacked --direction horizontal
+idx stocks history BBRI --period 6mo --chart bar --direction vertical
+```
+
+`--chart bar` draws one bar per series at each label; `--chart stacked` sums the
+series into one bar (positives up, negatives down), which looks like `bar` for
+the commands that carry a single series. `--direction` picks `vertical` (the
+default) or `horizontal`. Charts are a table-mode view: `-o json` and `-o csv`
+are unchanged.
 
 Global flags work anywhere on the line:
 

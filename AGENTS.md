@@ -41,7 +41,8 @@ src/
                      (the user's own session) and the one not in the Auto chain: orderbook endpoint ->
                      quote + full depth ladder (model/orderbook.rs), charts/daily -> candles; auth.rs is
                      the rotating-token session store (file 0600 + env seed, POST /login/refresh), login.rs
-                     captures the token from a browser over the Chrome DevTools Protocol (ws, no TLS)
+                     captures the token from a browser over the Chrome DevTools Protocol (ws, no TLS),
+                     hotlist + running-trade parsers behind `idx stockbit monitor`
   analysis/          technical.rs (indicators + signal), fundamental.rs (verdict), screen.rs (filter DSL),
                      sentiment.rs (lexicon), returns.rs (windows, CAGR, drawdown, volatility),
                      dividends.rs (totals, TTM yield, streak), bandar.rs (bandarmology: tiers, signal,
@@ -62,6 +63,9 @@ src/
                      schema.rs rewrites input schemas into the subset every harness accepts;
                      http.rs streamable-HTTP transport (axum, bearer token); clients.rs the
                      per-agent registration recipes behind `idx mcp setup` (keep docs/mcp.md in step)
+  tui/               the interactive board behind `idx stockbit monitor`: app.rs is the state
+                     machine and key map, ui.rs the panes (braille candle chart, mover lists,
+                     running-trade tape). Owns the screen, so it has no table/JSON/MCP form
   model/             provider-agnostic domain types = the JSON contract (Quote, Candle, History, ...,
                      dividends.rs, returns.rs, market.rs, brief.rs, watchlist.rs)
   output/            table*.rs (comfy-table), json.rs (Envelope + JSON Schema), csv.rs (-o csv),
@@ -91,8 +95,8 @@ CLI groups: `stocks` (quote, history, profile, financials, earnings, dividends, 
 fundamental, technical, brief, compare, screen, news, sentiment, actions, foreign, list),
 `market` (overview, indices, foreign, brokers, calendar, holidays, members),
 `ownership` (import, ticker, entity, changes, foreign, releases, discover, path),
-`broker`, `bandar` (detect, screen, broker), `stockbit` (login, status, logout, orderbook — opt-in
-realtime), `watch`, `mcp`, `schema`, `config`, `cache`, `completions`, `version`.
+`broker`, `bandar` (detect, screen, broker), `stockbit` (login, status, logout, orderbook, monitor —
+opt-in realtime), `watch`, `mcp`, `schema`, `config`, `cache`, `completions`, `version`.
 
 ## Rules that keep the tool trustworthy
 

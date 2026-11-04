@@ -470,4 +470,34 @@ mod tests {
     fn offline_and_no_cache_conflict() {
         assert!(Cli::try_parse_from(["idx", "--offline", "--no-cache", "version"]).is_err());
     }
+
+    #[test]
+    fn stocks_chart_flags_parse() {
+        use crate::output::chart::{ChartDirection, ChartKind};
+        let cli = Cli::parse_from([
+            "idx",
+            "stocks",
+            "history",
+            "BBRI",
+            "--chart",
+            "stacked",
+            "--direction",
+            "horizontal",
+        ]);
+        match cli.command {
+            Command::Stocks(stocks::StocksCmd::History { chart, .. }) => {
+                assert_eq!(chart.chart, Some(ChartKind::Stacked));
+                assert_eq!(chart.direction, ChartDirection::Horizontal);
+            }
+            _ => panic!("expected stocks history"),
+        }
+        let cli = Cli::parse_from(["idx", "stocks", "quote", "BBCA", "--chart", "bar"]);
+        match cli.command {
+            Command::Stocks(stocks::StocksCmd::Quote { chart, .. }) => {
+                assert_eq!(chart.chart, Some(ChartKind::Bar));
+                assert_eq!(chart.direction, ChartDirection::Vertical);
+            }
+            _ => panic!("expected stocks quote"),
+        }
+    }
 }

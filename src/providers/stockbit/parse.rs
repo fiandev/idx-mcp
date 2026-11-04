@@ -7,10 +7,11 @@
 //! - chart candle `volume` is **lots**, converted to shares here (×100) so a
 //!   Stockbit candle's volume matches Yahoo's and the orderbook's.
 
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, NaiveDate};
 use serde_json::Value;
 
 use crate::error::{IdxError, Result};
+use crate::model::monitor::{Mover, MoverKind, Movers, RunningTrade, Trade, TradeSide};
 use crate::model::orderbook::{BookLevel, OrderBook};
 use crate::model::{wib, wib_from_unix, Candle, History, Interval, Period, Quote, Symbol};
 
@@ -218,6 +219,186 @@ fn candle_time(row: &Value) -> Option<DateTime<FixedOffset>> {
         .single()
 }
 
+/// The first key of a row that holds a number, in the caller's order of trust.
+fn pick_num(row: &Value, keys: &[&str]) -> Option<f64> {
+    keys.iter().find_map(|k| row.get(*k).and_then(num))
+}
+
+/// The first key of a row that holds a non-empty string.
+fn pick_str(row: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|k| {
+        row.get(*k)
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+    })
+}
+
+/// The row array of a response, wherever the envelope buried it.
+///
+/// Stockbit wraps lists inconsistently: `data` is sometimes the array itself,
+/// sometimes `data.result`, sometimes one named key per list. Rather than
+/// hard-code one path and break on the next rename, walk the envelope up to a
+/// few levels and take the first array found. Returns `None` for a body with no
+/// list at all, which is how an empty after-hours hotlist can arrive.
+fn row_array(v: &Value) -> Option<&Vec<Value>> {
+    fn walk(v: &Value, depth: usize) -> Option<&Vec<Value>> {
+        if let Some(a) = v.as_array() {
+            return Some(a);
+        }
+        if depth == 0 {
+            return None;
+        }
+        let o = v.as_object()?;
+        for k in [
+            "result",
+            "rows",
+            "items",
+            "trades",
+            "data",
+            "companies",
+            "topGainer",
+            "topLoser",
+            "mostActive",
+            "running_trade",
+        ] {
+            if let Some(found) = o.get(k).and_then(|x| walk(x, depth - 1)) {
+                return Some(found);
+            }
+        }
+        o.values().find_map(|x| walk(x, depth - 1))
+    }
+    walk(v.get("data")?, 3)
+}
+
+/// Rows of `GET /emitten/hotlist/{topGainer|topLoser|mostActive}`.
+///
+/// A row without a usable symbol is dropped rather than guessed at: the ticker
+/// is the one field every consumer keys off.
+pub fn parse_movers(kind: MoverKind, body: &str) -> Result<Movers> {
+    let v: Value = serde_json::from_str(body)?;
+    let rows = row_array(&v).ok_or_else(|| {
+        IdxError::provider(NAME, format!("{} response had no list", kind.as_str()))
+    })?;
+    let mut out = Vec::with_capacity(rows.len());
+    for r in rows {
+        let Some(symbol) = pick_str(r, &["symbol", "code", "ticker"]) else {
+            continue;
+        };
+        let Ok(symbol) = Symbol::parse(&symbol) else {
+            continue;
+        };
+        out.push(Mover {
+            symbol,
+            name: pick_str(r, &["name", "company_name"]),
+            last: pick_num(r, &["last", "close", "price", "lastprice"]),
+            change: pick_num(r, &["change"]),
+            change_pct: pick_num(
+                r,
+                &["percent", "percentage", "change_pct", "percentage_change"],
+            ),
+            volume: pick_num(r, &["volume"])
+                .filter(|n| *n >= 0.0)
+                .map(|n| n as u64),
+            value: pick_num(r, &["value"]),
+        });
+    }
+    Ok(Movers { kind, rows: out })
+}
+
+/// Rows of `GET /order-trade/running-trade`. A row without a price is dropped.
+pub fn parse_running_trade(symbol: &Symbol, body: &str) -> Result<RunningTrade> {
+    let v: Value = serde_json::from_str(body)?;
+    let rows = row_array(&v)
+        .ok_or_else(|| IdxError::provider(NAME, "running trade response had no list"))?;
+    let mut trades = Vec::with_capacity(rows.len());
+    for r in rows {
+        let Some(price) = pick_num(r, &["price"]) else {
+            continue;
+        };
+        let volume = pick_num(r, &["volume", "lot", "lots"])
+            .filter(|n| *n >= 0.0)
+            .unwrap_or(0.0) as u64;
+        trades.push(Trade {
+            time: trade_time(r),
+            price,
+            volume,
+            side: pick_str(r, &["action", "side", "type", "buy_sell"])
+                .map(|s| side_of(&s))
+                .unwrap_or(TradeSide::Unknown),
+            buyer: pick_str(r, &["buyer", "buyer_code", "buy_code"]),
+            seller: pick_str(r, &["seller", "seller_code", "sell_code"]),
+        });
+    }
+    Ok(RunningTrade {
+        symbol: symbol.clone(),
+        trades,
+    })
+}
+
+/// `B` / `BUY` / `ACTION_TYPE_BUY` / `S` / `SELL` -> a side. Anything else is
+/// `Unknown`; the tape still shows the print, it just does not colour it.
+fn side_of(raw: &str) -> TradeSide {
+    let t = raw.trim().to_ascii_uppercase();
+    match t.as_str() {
+        "B" | "BUY" | "BID" | "ACTION_BUY" | "ACTION_TYPE_BUY" | "SIDE_BUY" => TradeSide::Buy,
+        "S" | "SELL" | "OFFER" | "ACTION_SELL" | "ACTION_TYPE_SELL" | "SIDE_SELL" => {
+            TradeSide::Sell
+        }
+        _ => TradeSide::Unknown,
+    }
+}
+
+/// A print's clock. The route has been seen to send a bare `HH:MM:SS` clock
+/// (the session day is then today in WIB), an epoch in ms or s, and a full
+/// timestamp. An unrecognised spelling yields `None` rather than a wrong time.
+fn trade_time(row: &Value) -> Option<DateTime<FixedOffset>> {
+    for key in ["time", "trade_time", "datetime", "created_at"] {
+        let Some(v) = row.get(key) else { continue };
+        if let Some(raw) = v.as_str() {
+            if let Some(t) = parse_clock(raw.trim()) {
+                return Some(t);
+            }
+            continue;
+        }
+        if let Some(n) = num(v) {
+            if n <= 0.0 {
+                continue;
+            }
+            // Milliseconds are > 1e11 for any date this decade.
+            let secs = if n > 1e11 { n / 1000.0 } else { n };
+            if let Some(t) = wib_from_unix(secs as i64) {
+                return Some(t);
+            }
+        }
+    }
+    None
+}
+
+/// `HH:MM[:SS]` against today's WIB date, then the timestamp spellings.
+fn parse_clock(raw: &str) -> Option<DateTime<FixedOffset>> {
+    let today: NaiveDate = wib_from_unix(chrono::Utc::now().timestamp())?.date_naive();
+    for f in ["%H:%M:%S", "%H:%M"] {
+        if let Ok(t) = chrono::NaiveTime::parse_from_str(raw, f) {
+            return today.and_time(t).and_local_timezone(wib()).single();
+        }
+    }
+    if let Ok(dt) = DateTime::parse_from_rfc3339(raw) {
+        return Some(dt.with_timezone(&wib()));
+    }
+    for f in ["%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M"] {
+        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(raw, f) {
+            return naive.and_local_timezone(wib()).single();
+        }
+    }
+    NaiveDate::parse_from_str(raw, "%Y-%m-%d")
+        .ok()?
+        .and_hms_opt(0, 0, 0)?
+        .and_local_timezone(wib())
+        .single()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +519,100 @@ mod tests {
         assert_eq!(timeframe_for(Period::Y5, Interval::Day1).0, "5y");
         assert_eq!(timeframe_for(Period::Y1, Interval::Hour1), ("1w", true));
         assert_eq!(timeframe_for(Period::D1, Interval::Min5), ("1d", false));
+    }
+
+    // The two fixtures below are CONSTRUCTED from the documented route shape,
+    // not recorded from a live call (see tests/fixtures/stockbit/README.md).
+    // They pin the parser's tolerance — envelope walking, dropped rows, unit
+    // pass-through — and say nothing about whether Stockbit still sends these
+    // keys. Replace them with a real capture before trusting the numbers.
+    const HOTLIST_GAINERS: &str =
+        include_str!("../../../tests/fixtures/stockbit/hotlist_gainers_constructed.json");
+    const HOTLIST_LOSERS: &str =
+        include_str!("../../../tests/fixtures/stockbit/hotlist_losers_constructed.json");
+    const RUNNING_TRADE: &str =
+        include_str!("../../../tests/fixtures/stockbit/running_trade_constructed.json");
+
+    #[test]
+    fn movers_read_a_bare_data_array() {
+        let m = parse_movers(MoverKind::Gainer, HOTLIST_GAINERS).unwrap();
+        assert_eq!(m.kind, MoverKind::Gainer);
+        // The row with no symbol is dropped, not guessed at.
+        assert_eq!(m.rows.len(), 2);
+        let first = &m.rows[0];
+        assert_eq!(first.symbol.as_str(), "DMMX");
+        assert_eq!(first.last, Some(172.0));
+        assert_eq!(first.change, Some(32.0));
+        assert_eq!(first.change_pct, Some(22.857));
+        assert_eq!(first.volume, Some(4_187_300));
+        assert_eq!(first.name.as_deref(), Some("Digital Mediatama Maxima Tbk."));
+    }
+
+    #[test]
+    fn movers_read_a_wrapped_data_result() {
+        let m = parse_movers(MoverKind::Loser, HOTLIST_LOSERS).unwrap();
+        assert_eq!(m.rows.len(), 2);
+        assert_eq!(m.rows[0].symbol.as_str(), "GOTO");
+        assert_eq!(m.rows[0].change_pct, Some(-10.0));
+    }
+
+    #[test]
+    fn movers_accept_an_empty_list_after_hours() {
+        let m = parse_movers(MoverKind::Gainer, r#"{"data":[]}"#).unwrap();
+        assert!(m.rows.is_empty());
+        assert!(parse_movers(MoverKind::Gainer, r#"{"message":"ok"}"#).is_err());
+    }
+
+    #[test]
+    fn running_trade_reads_prints_sides_and_tags() {
+        let rt = parse_running_trade(&sym("BBCA"), RUNNING_TRADE).unwrap();
+        assert_eq!(rt.symbol.as_str(), "BBCA");
+        assert_eq!(rt.trades.len(), 3);
+        let sell = &rt.trades[0];
+        assert_eq!(sell.price, 5175.0);
+        assert_eq!(sell.volume, 2644);
+        assert_eq!(sell.side, TradeSide::Sell);
+        assert_eq!(sell.buyer.as_deref(), Some("BB"));
+        assert_eq!(sell.seller.as_deref(), Some("ZP"));
+        assert_eq!(
+            sell.time.unwrap().format("%Y-%m-%d %H:%M:%S").to_string(),
+            "2026-10-16 15:49:59"
+        );
+        assert_eq!(rt.trades[1].side, TradeSide::Buy);
+        // A print with no side is kept, flagged unknown.
+        assert_eq!(rt.trades[2].side, TradeSide::Unknown);
+        assert!(rt.trades[2].time.is_none());
+    }
+
+    #[test]
+    fn trade_side_spellings() {
+        assert_eq!(side_of("B"), TradeSide::Buy);
+        assert_eq!(side_of("buy"), TradeSide::Buy);
+        assert_eq!(side_of("action_type_sell"), TradeSide::Sell);
+        assert_eq!(side_of("side_sell"), TradeSide::Sell);
+        assert_eq!(side_of(""), TradeSide::Unknown);
+        assert_eq!(side_of("UNSPECIFIED"), TradeSide::Unknown);
+    }
+
+    #[test]
+    fn trade_time_spellings() {
+        let ts = |raw: &str| {
+            trade_time(&serde_json::json!({ "time": raw }))
+                .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
+        };
+        assert_eq!(
+            ts("2026-10-16 09:15:30").as_deref(),
+            Some("2026-10-16 09:15")
+        );
+        assert_eq!(
+            ts("2026-10-16T09:15:30+07:00").as_deref(),
+            Some("2026-10-16 09:15")
+        );
+        // A bare clock lands on today, in WIB.
+        let today = wib_from_unix(chrono::Utc::now().timestamp()).unwrap();
+        let expect = format!("{} 09:15", today.format("%Y-%m-%d"));
+        assert_eq!(ts("09:15:30").as_deref(), Some(expect.as_str()));
+        assert_eq!(ts("nonsense"), None);
+        assert_eq!(trade_time(&serde_json::json!({})), None);
     }
 }

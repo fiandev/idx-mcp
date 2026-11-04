@@ -204,6 +204,49 @@ fn config_init_set_get_roundtrip() {
 }
 
 #[test]
+fn chart_flags_reach_every_numeric_stocks_command() {
+    let sb = sandbox();
+    for cmd in [
+        "quote",
+        "history",
+        "returns",
+        "dividends",
+        "financials",
+        "earnings",
+        "compare",
+        "foreign",
+        "screen",
+    ] {
+        idx(&sb.cache, &sb.config)
+            .args(["stocks", cmd, "--help"])
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("--chart"))
+            .stdout(predicate::str::contains("--direction"));
+    }
+    // clap rejects an unknown kind before any network call.
+    idx(&sb.cache, &sb.config)
+        .args(["stocks", "quote", "BBCA", "--chart", "pie"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("invalid value"));
+    // A chart needs data like any other table does: offline with an empty cache exits 5.
+    idx(&sb.cache, &sb.config)
+        .args([
+            "--offline",
+            "stocks",
+            "quote",
+            "BBCA",
+            "--chart",
+            "bar",
+            "--direction",
+            "horizontal",
+        ])
+        .assert()
+        .code(5);
+}
+
+#[test]
 fn new_stock_commands_have_help_and_fail_offline_cleanly() {
     let sb = sandbox();
     for (cmd, needle) in [
@@ -264,6 +307,18 @@ fn stockbit_surface_and_session_commands() {
         .assert()
         .success()
         .stdout(predicate::str::contains("depth"));
+    idx(&sb.cache, &sb.config)
+        .args(["stockbit", "monitor", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--interval"))
+        .stdout(predicate::str::contains("running trade"));
+    // The board owns the screen; without one it says so instead of drawing.
+    idx(&sb.cache, &sb.config)
+        .args(["stockbit", "monitor"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("terminal"));
 
     // No session yet: status says so, and reads error as a usage error (exit 2)
     // before any network — even the realtime order book and the provider quote.

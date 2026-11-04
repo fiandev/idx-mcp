@@ -12,6 +12,10 @@
 //!   volume, value, foreign flow) and the full depth ladder.
 //! - `GET /charts/{SYM}/daily?timeframe=..&chart_type=PRICE_CHART_TYPE_CANDLE`
 //!   — OHLCV candles; Stockbit picks the granularity from the window.
+//! - `GET /emitten/hotlist/{topGainer|topLoser|mostActive}?limit=N` — the
+//!   market-mover lists behind `idx stockbit monitor`.
+//! - `GET /order-trade/running-trade?symbols[]={SYM}&limit=N&...` — the tape
+//!   for one ticker, newest print first.
 //! - `POST /login/refresh` — rotate the session (see `auth.rs`).
 //!
 //! Symbols are IDX codes (`BBCA`); indices use Stockbit's own code (`IHSG`,
@@ -27,6 +31,7 @@ use futures::future::join_all;
 
 use crate::error::{IdxError, Result};
 use crate::http::{Fetched, Fetcher};
+use crate::model::monitor::{MoverKind, Movers, RunningTrade};
 use crate::model::{History, Interval, OrderBook, Period, Quote, Symbol};
 
 use super::{Provider, Sourced, Ttls};
@@ -163,6 +168,58 @@ impl Stockbit {
         }
         let ob = parse::parse_orderbook(symbol, &f.body)?;
         Ok(Self::sourced(ob, &f))
+    }
+
+    /// One hotlist (`topGainer` / `topLoser` / `mostActive`). The lists are
+    /// empty outside the session, which is not an error: an after-hours hotlist
+    /// is simply `[]`.
+    pub async fn movers(&self, kind: MoverKind, limit: usize) -> Result<Sourced<Movers>> {
+        let url = format!("{EXODUS}/emitten/hotlist/{}?limit={limit}", kind.as_path());
+        let f = self.get(&url, REALTIME_TTL, "market movers").await?;
+        if f.status == 404 || parse::is_not_found(&f.body) {
+            return Err(IdxError::NotFound(format!("hotlist {}", kind.as_path())));
+        }
+        if !f.is_success() {
+            return Err(IdxError::provider(
+                NAME,
+                format!(
+                    "hotlist HTTP {}: {}",
+                    f.status,
+                    parse::error_message(&f.body)
+                ),
+            ));
+        }
+        Ok(Self::sourced(parse::parse_movers(kind, &f.body)?, &f))
+    }
+
+    /// The running trade of one ticker, newest print first.
+    pub async fn running_trade(
+        &self,
+        symbol: &Symbol,
+        limit: usize,
+    ) -> Result<Sourced<RunningTrade>> {
+        let url = format!(
+            "{EXODUS}/order-trade/running-trade?symbols%5B%5D={}&sort=DESC&limit={limit}&order_by=RUNNING_TRADE_ORDER_BY_TIME",
+            stockbit_code(symbol)
+        );
+        let f = self.get(&url, REALTIME_TTL, "running trade").await?;
+        if f.status == 404 || parse::is_not_found(&f.body) {
+            return Err(IdxError::NotFound(symbol.to_string()));
+        }
+        if !f.is_success() {
+            return Err(IdxError::provider(
+                NAME,
+                format!(
+                    "running trade HTTP {}: {}",
+                    f.status,
+                    parse::error_message(&f.body)
+                ),
+            ));
+        }
+        Ok(Self::sourced(
+            parse::parse_running_trade(symbol, &f.body)?,
+            &f,
+        ))
     }
 
     async fn quote_one(&self, symbol: &Symbol) -> Result<Sourced<Quote>> {

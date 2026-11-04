@@ -6,6 +6,25 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `--chart bar|stacked` and `--direction vertical|horizontal` on the numeric
+  `stocks` commands (`quote`, `history`, `returns`, `dividends`, `financials`,
+  `earnings`, `compare`, `foreign`, `screen`): the table is replaced by a bar
+  chart drawn with block characters. `stacked` sums the series at each label
+  (positives up, negatives down); `--direction` picks vertical (default) or
+  horizontal. Table mode only — `-o json` and `-o csv` are unchanged.
+
+- `idx stockbit monitor [SYMBOL]`: a full-screen realtime board — intraday
+  candle chart, top gainers and losers, and the running trade of the focused
+  ticker, all refreshed on one clock. New `crossterm`/`ratatui` dependencies.
+  The pane a request fails keeps its last good value and reports the reason;
+  `--offline` fills the panes from cache. It writes nothing to stdout and
+  refuses to run without a terminal, so it has no JSON or MCP form. The
+  hotlist and running-trade field names are **not yet verified against a live
+  response** — see
+  [docs/stockbit.md](docs/stockbit.md#field-names-are-unverified).
+
 ## [0.8.1] - 2026-10-18
 
 ### Fixed

@@ -17,6 +17,7 @@ use crate::output::json::SCHEMA_ORDERBOOK;
 use crate::output::{self, table};
 use crate::providers::stockbit::{login, SessionStore, Stockbit};
 use crate::providers::Ttls;
+use crate::tui::MonitorOptions;
 
 use super::{emit, Context};
 
@@ -55,6 +56,29 @@ pub enum StockbitCmd {
         /// Price levels per side to show (0 shows all).
         #[arg(long, short = 'd', default_value_t = 10)]
         depth: usize,
+    },
+    /// A full-screen realtime board: candle chart, top gainers and losers, and the running trade.
+    #[command(
+        after_help = "Examples:\n  idx stockbit monitor                    # board on your watchlist's first ticker (else BBCA)\n  idx stockbit monitor BBRI\n  idx stockbit monitor BBRI --interval 2   # refresh every 2 s\n  idx stockbit monitor GOTO --top 20 --trades 100\n\nKeys: ↑↓ select/scroll · tab pane · enter load the selected mover · r refresh now ·\n+/- polling interval · ? help · q quit.\n\nThe chart is today's one-minute candles, falling back to five days of hourly bars\nafter the close. Every pane refreshes on one clock, and a failed pane keeps its\nlast good value with the reason in the top-right corner."
+    )]
+    Monitor {
+        /// IDX ticker the chart and tape start on; Enter on a mover switches it.
+        #[arg(value_name = "SYMBOL")]
+        symbol: Option<String>,
+        /// Seconds between refreshes.
+        #[arg(
+            long,
+            short = 'n',
+            default_value_t = MonitorOptions::DEFAULT_INTERVAL_SECS,
+            value_parser = clap::value_parser!(u64).range(1..=120)
+        )]
+        interval: u64,
+        /// Rows in each mover list.
+        #[arg(long, default_value_t = 12)]
+        top: usize,
+        /// Prints in the running-trade pane.
+        #[arg(long, default_value_t = 60)]
+        trades: usize,
     },
 }
 
@@ -104,7 +128,39 @@ pub async fn run(ctx: &Context, cmd: StockbitCmd) -> Result<()> {
                 table::orderbook(d, depth, ctx.color)
             })
         }
+        StockbitCmd::Monitor {
+            symbol,
+            interval,
+            top,
+            trades,
+        } => {
+            let symbol = match symbol {
+                Some(s) => Symbol::parse(&s)?,
+                None => default_symbol(ctx),
+            };
+            let sb = provider(ctx, store(ctx));
+            crate::tui::run(
+                sb,
+                MonitorOptions {
+                    symbol,
+                    top,
+                    tape: trades,
+                    interval_secs: interval,
+                    color: ctx.color,
+                },
+            )
+            .await
+        }
     }
+}
+
+/// The monitor needs a ticker before it can draw anything: the first entry of
+/// the watchlist when there is one, else BBCA.
+fn default_symbol(ctx: &Context) -> Symbol {
+    crate::cli::watch::load(&crate::cli::watch::path(ctx))
+        .ok()
+        .and_then(|list| list.into_iter().next())
+        .unwrap_or_else(|| Symbol::parse("BBCA").expect("BBCA is a valid ticker"))
 }
 
 fn status_cmd(ctx: &Context) -> Result<()> {

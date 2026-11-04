@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{IdxError, Result};
 
+pub mod chart;
 pub mod csv;
 pub mod format;
 pub mod json;

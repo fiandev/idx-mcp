@@ -26,5 +26,8 @@ Constructed, not recorded (the tokens inside are dummies signed by nobody):
 
 | file | stands for | why constructed |
 | --- | --- | --- |
+| hotlist_gainers_constructed.json | `/emitten/hotlist/topGainer?limit=N` | the route is documented but no response has been recorded; this pins the parser's envelope walking and its dropping of a row with no symbol |
+| hotlist_losers_constructed.json | `/emitten/hotlist/topLoser?limit=N` | as above, wrapped in `data.result` to cover the other envelope shape |
+| running_trade_constructed.json | `/order-trade/running-trade?symbols[]=BBCA&…` | as above; covers a sell print, a buy print, a print with no side and one with no clock |
 | login_refresh_constructed.json | `POST /login/refresh` (bearer = refresh token, body `{}`) | recording one spends a real refresh token; the shape is the one a long-running bot reads every day (`data.access.token`, `data.refresh.token`). The parser searches structurally, so a wrapper level more or less still parses |
 | credential_storage_cookie_constructed.txt | the `credentialStorage` cookie stockbit.com keeps after a login | URL-encoded `{"state":{"access":{"token","expired_at"},"refresh":{...},"user":{...}},"version":0}`, the layout documented by github.com/ino-xious/stockbit-mcp; the parser also accepts bare JWT strings in `access` / `refresh` |

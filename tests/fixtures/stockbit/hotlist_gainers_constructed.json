@@ -1,0 +1,25 @@
+{
+  "message": "Successfully get hotlist data",
+  "data": [
+    {
+      "symbol": "DMMX",
+      "name": "Digital Mediatama Maxima Tbk.",
+      "last": 172,
+      "change": 32,
+      "percent": 22.857,
+      "volume": 4187300
+    },
+    {
+      "symbol": "BBCA",
+      "name": "Bank Central Asia Tbk.",
+      "last": 5175,
+      "change": 125,
+      "percent": 2.475,
+      "volume": 1241098200
+    },
+    {
+      "name": "no symbol, dropped",
+      "last": 999
+    }
+  ]
+}

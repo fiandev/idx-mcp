@@ -65,9 +65,74 @@ window — `1mo`/`3mo`/`1y` are daily, `5d`/intraday is hourly, `5y` is weekly �
 and a warning says so when it is not the daily bars the interval nominally asks
 for.
 
-The Stockbit provider covers `quote`, `history` and `orderbook`. The other
-commands (fundamentals, financials, news, …) stay on the free providers; run
-them without `--provider stockbit`.
+The Stockbit provider covers `quote`, `history`, `orderbook`, and the hotlist and
+running-trade routes behind the monitor. The other commands (fundamentals,
+financials, news, …) stay on the free providers; run them without
+`--provider stockbit`.
+
+## The monitor
+
+`idx stockbit monitor` is a full-screen board for watching the session without
+leaving the terminal:
+
+```sh
+idx stockbit monitor                    # starts on your watchlist's first ticker (else BBCA)
+idx stockbit monitor BBRI --interval 2
+idx stockbit monitor GOTO --top 20 --trades 100
+```
+
+```
+╭ idx · stockbit monitor ───────────────────────────────────────────────╮
+│ BBRI  Bank Rakyat Indonesia Tbk.  4,120  +30 (+0.73%)                 │
+│ H 4,150 L 4,080   vol 812,004,100   foreign +182.4B   every 5s 12:24  │
+╰───────────────────────────────────────────────────────────────────────╯
+```
+
+Four panes, refreshed together on one clock:
+
+| pane | source | shows |
+| --- | --- | --- |
+| **Chart** | `/charts/{SYM}/daily?timeframe=1d` | today's one-minute candles, drawn with braille so a price lands inside a cell. After the close Stockbit sends none, so it falls back to five days of hourly bars and says `1h · 5d` in the title |
+| **Top gainer** | `/emitten/hotlist/topGainer` | the movers list, one row per ticker: last price and percent change |
+| **Top loser** | `/emitten/hotlist/topLoser` | as above, falling |
+| **Running trade** | `/order-trade/running-trade?symbols[]=SYM` | newest print first: time, price, size, buy/sell, the buyer and seller broker codes |
+
+Keys: `↑↓` (`j`/`k`) move in the mover lists or scroll the tape, `tab` (`h`/`l`)
+switches which pane the arrows drive, `enter` loads the selected mover into the
+chart and tape, `pgup`/`pgdn` scroll the tape ten prints, `g`/`G` jump to the
+first/last row, `r` refreshes now, `+`/`-` change the polling interval (1–120 s),
+`?` opens the key sheet and `q` (or `ctrl+c`) quits.
+
+A pane that fails keeps its last good value and the reason appears as a
+`N warning(s)` chip in the header; `?` lists them. `--offline` fills the panes
+from whatever Stockbit responses are still cached, exactly as elsewhere.
+
+`--interval` defaults to 5 s. The three realtime routes are cached for 5 s
+whatever the interval, so a burst of key presses or a fast poll coalesces into
+one upstream request instead of one per pane. Keep it human either way: this is
+your own account on an undocumented endpoint.
+
+### Field names are unverified
+
+The hotlist and running-trade routes are the two Stockbit endpoints `idx` calls
+but has **not** recorded a real response from. Their paths come from community
+reverse-engineering (`INo-xious/stockbit-mcp`, `satriyop/ai-saham`), which
+documents routes but not field names. Rather than hard-code one guess, the
+parsers in `providers/stockbit/parse.rs` read the first key they find among a
+small candidate list — `last`/`close`/`price`, `percent`/`percentage`/
+`change_pct`, `action`/`side`/`type` — and walk the envelope
+(`data`, `data.result`, …) before giving up, so an empty after-hours list is a
+blank pane and not an error.
+
+That is tolerance, not verification. Before trusting the numbers, record one
+response per route into `tests/fixtures/stockbit/` and replace the
+`*_constructed.json` fixtures the parser tests currently use. The same applies
+to units: a print's size is shown exactly as Stockbit sends it, and Stockbit's
+own UI quotes running trade in **lots** while the order book quotes **shares**.
+
+The monitor writes nothing to stdout and refuses to run without a terminal — it
+is the one `idx` command with no table or JSON form, and it has no MCP tool or
+web-terminal equivalent for the same reason.
 
 ## MCP
 

@@ -6,6 +6,7 @@ use crate::analysis::screen::{parse_filters, Key};
 use crate::error::IdxError;
 use crate::error::Result;
 use crate::model::{Interval, Period, StatementPeriod, Symbol};
+use crate::output::chart::{self as chrt, ChartArgs};
 use crate::output::json::{
     SCHEMA_ACTIONS, SCHEMA_BRIEF, SCHEMA_COMPARE, SCHEMA_DIVIDENDS, SCHEMA_EARNINGS,
     SCHEMA_FINANCIALS, SCHEMA_FOREIGN, SCHEMA_FUNDAMENTALS, SCHEMA_HISTORY, SCHEMA_INSTRUMENTS,
@@ -39,6 +40,8 @@ pub enum StocksCmd {
         /// IDX tickers, e.g. BBCA or BBCA,BBRI. The .JK suffix is optional.
         #[arg(required = true, value_name = "SYMBOLS")]
         symbols: Vec<String>,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 
     /// OHLCV price history.
@@ -58,6 +61,8 @@ pub enum StocksCmd {
         /// Rows shown in table mode (most recent first kept); 0 shows everything. JSON is never limited.
         #[arg(long, short = 'n', default_value_t = 30)]
         limit: usize,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 
     /// Company profile: sector, industry, description, size, management.
@@ -82,6 +87,8 @@ pub enum StocksCmd {
         /// Which statement to show in table mode (JSON always carries all three).
         #[arg(long, short = 's', value_enum, default_value = "all")]
         statement: Statement,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 
     /// Reported quarterly EPS vs estimates, yearly revenue and earnings, next earnings date.
@@ -91,6 +98,8 @@ pub enum StocksCmd {
     Earnings {
         #[arg(value_name = "SYMBOL")]
         symbol: String,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 
     /// Cash dividend and split history with yearly totals, trailing-twelve-month yield and the payout streak.
@@ -103,6 +112,8 @@ pub enum StocksCmd {
         /// Most recent payments listed in table mode (JSON carries all).
         #[arg(long, short = 'n', default_value_t = 12)]
         limit: usize,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 
     /// Price returns over 1w..5y, YTD, CAGR, volatility, drawdowns and 52-week position, with excess returns over IHSG.
@@ -119,6 +130,8 @@ pub enum StocksCmd {
         /// Skip the benchmark fetch.
         #[arg(long)]
         no_benchmark: bool,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 
     /// One-page research brief: quote, verdict, signal, returns vs IHSG, dividends, holders and headlines in one call.
@@ -176,6 +189,8 @@ pub enum StocksCmd {
         /// CSV of symbol,name to screen instead of the bundled universe.
         #[arg(long, value_name = "PATH")]
         universe: Option<std::path::PathBuf>,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 
     /// Latest headlines from Kontan and CNBC Indonesia; with a ticker, the company's headlines first, then market context.
@@ -245,6 +260,8 @@ pub enum StocksCmd {
         /// Latest sessions to show (1-250).
         #[arg(long, short = 'n', default_value_t = service::FOREIGN_DEFAULT_DAYS)]
         days: usize,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 
     /// Side-by-side fundamentals for two or more tickers.
@@ -255,41 +272,58 @@ pub enum StocksCmd {
         /// Two or more IDX tickers, comma or space separated.
         #[arg(required = true, value_name = "SYMBOLS")]
         symbols: Vec<String>,
+        #[command(flatten)]
+        chart: ChartArgs,
     },
 }
 
 pub async fn run(ctx: &Context, cmd: StocksCmd) -> Result<()> {
     match cmd {
-        StocksCmd::Quote { symbols } => quote(ctx, &symbols).await,
+        StocksCmd::Quote { symbols, chart } => quote(ctx, &symbols, &chart).await,
         StocksCmd::History {
             symbol,
             period,
             interval,
             limit,
-        } => history(ctx, &symbol, period, interval, limit).await,
+            chart,
+        } => history(ctx, &symbol, period, interval, limit, &chart).await,
         StocksCmd::Profile { symbol } => profile(ctx, &symbol).await,
         StocksCmd::Financials {
             symbol,
             period,
             statement,
-        } => financials(ctx, &symbol, period, statement).await,
-        StocksCmd::Earnings { symbol } => earnings(ctx, &symbol).await,
-        StocksCmd::Dividends { symbol, limit } => dividends(ctx, &symbol, limit).await,
+            chart,
+        } => financials(ctx, &symbol, period, statement, &chart).await,
+        StocksCmd::Earnings { symbol, chart } => earnings(ctx, &symbol, &chart).await,
+        StocksCmd::Dividends {
+            symbol,
+            limit,
+            chart,
+        } => dividends(ctx, &symbol, limit, &chart).await,
         StocksCmd::Brief { symbol } => brief(ctx, &symbol).await,
         StocksCmd::Returns {
             symbols,
             benchmark,
             no_benchmark,
-        } => returns(ctx, &symbols, &benchmark, no_benchmark).await,
+            chart,
+        } => returns(ctx, &symbols, &benchmark, no_benchmark, &chart).await,
         StocksCmd::Fundamental { symbol } => fundamental(ctx, &symbol).await,
         StocksCmd::Technical { symbol, period } => technical(ctx, &symbol, period).await,
-        StocksCmd::Compare { symbols } => compare(ctx, &symbols).await,
-        StocksCmd::Foreign { symbol, days } => {
+        StocksCmd::Compare { symbols, chart } => compare(ctx, &symbols, &chart).await,
+        StocksCmd::Foreign {
+            symbol,
+            days,
+            chart,
+        } => {
             let sym = Symbol::parse(&symbol)?;
             let list = universe::load(None).unwrap_or_default();
             let result = service::foreign_flow(&ctx.fetcher, &list, &sym, days).await?;
             emit(ctx, SCHEMA_FOREIGN, result, |d| {
-                tx::foreign_flow(d, ctx.color)
+                if chart.is_on() {
+                    chrt::foreign(d, &chart, ctx.color)
+                } else {
+                    tx::foreign_flow(d, ctx.color)
+                }
             })
         }
         StocksCmd::Actions { symbol, since } => {
@@ -317,6 +351,7 @@ pub async fn run(ctx: &Context, cmd: StocksCmd) -> Result<()> {
             max_fundamentals,
             fundamentals,
             universe,
+            chart,
         } => {
             let filters = parse_filters(&filter)?;
             let Some(sort_key) = Key::parse(&sort) else {
@@ -337,7 +372,11 @@ pub async fn run(ctx: &Context, cmd: StocksCmd) -> Result<()> {
             };
             let result = service::screen(ctx.provider.as_ref(), &list, &opts).await?;
             emit(ctx, SCHEMA_SCREEN, result, |d| {
-                newstbl::screen(d, ctx.color)
+                if chart.is_on() {
+                    chrt::screen(d, &chart, ctx.color)
+                } else {
+                    newstbl::screen(d, ctx.color)
+                }
             })
         }
         StocksCmd::News {
@@ -374,10 +413,16 @@ pub async fn run(ctx: &Context, cmd: StocksCmd) -> Result<()> {
     }
 }
 
-async fn quote(ctx: &Context, raw: &[String]) -> Result<()> {
+async fn quote(ctx: &Context, raw: &[String], chart: &ChartArgs) -> Result<()> {
     let symbols = Symbol::parse_list(raw)?;
     let result = ctx.provider.quotes(&symbols).await?;
-    emit(ctx, SCHEMA_QUOTES, result, |d| table::quotes(d, ctx.color))
+    emit(ctx, SCHEMA_QUOTES, result, |d| {
+        if chart.is_on() {
+            chrt::quotes(d, chart, ctx.color)
+        } else {
+            table::quotes(d, ctx.color)
+        }
+    })
 }
 
 async fn history(
@@ -386,12 +431,17 @@ async fn history(
     period: Period,
     interval: Interval,
     limit: usize,
+    chart: &ChartArgs,
 ) -> Result<()> {
     let symbol = Symbol::parse(raw)?;
     let result = ctx.provider.history(&symbol, period, interval).await?;
     let limit = if limit == 0 { None } else { Some(limit) };
     emit(ctx, SCHEMA_HISTORY, result, |d| {
-        table::history(d, limit, ctx.color)
+        if chart.is_on() {
+            chrt::history(d, limit, chart, ctx.color)
+        } else {
+            table::history(d, limit, ctx.color)
+        }
     })
 }
 
@@ -408,6 +458,7 @@ async fn financials(
     raw: &str,
     period: StatementPeriod,
     statement: Statement,
+    chart: &ChartArgs,
 ) -> Result<()> {
     let symbol = Symbol::parse(raw)?;
     let result = ctx.provider.financials(&symbol, period).await?;
@@ -417,27 +468,45 @@ async fn financials(
         cash_flow: matches!(statement, Statement::All | Statement::Cash),
     };
     emit(ctx, SCHEMA_FINANCIALS, result, |d| {
-        reports::financials(d, &flags, ctx.color)
+        if chart.is_on() {
+            chrt::financials(d, chart, ctx.color)
+        } else {
+            reports::financials(d, &flags, ctx.color)
+        }
     })
 }
 
-async fn earnings(ctx: &Context, raw: &str) -> Result<()> {
+async fn earnings(ctx: &Context, raw: &str, chart: &ChartArgs) -> Result<()> {
     let symbol = Symbol::parse(raw)?;
     let result = ctx.provider.earnings(&symbol).await?;
     emit(ctx, SCHEMA_EARNINGS, result, |d| {
-        reports::earnings(d, ctx.color)
+        if chart.is_on() {
+            chrt::earnings(d, chart, ctx.color)
+        } else {
+            reports::earnings(d, ctx.color)
+        }
     })
 }
 
-async fn dividends(ctx: &Context, raw: &str, limit: usize) -> Result<()> {
+async fn dividends(ctx: &Context, raw: &str, limit: usize, chart: &ChartArgs) -> Result<()> {
     let symbol = Symbol::parse(raw)?;
     let result = service::dividends(ctx.provider.as_ref(), &symbol).await?;
     emit(ctx, SCHEMA_DIVIDENDS, result, |d| {
-        reports::dividends(d, limit, ctx.color)
+        if chart.is_on() {
+            chrt::dividends(d, chart, ctx.color)
+        } else {
+            reports::dividends(d, limit, ctx.color)
+        }
     })
 }
 
-async fn returns(ctx: &Context, raw: &[String], benchmark: &str, none: bool) -> Result<()> {
+async fn returns(
+    ctx: &Context,
+    raw: &[String],
+    benchmark: &str,
+    none: bool,
+    chart: &ChartArgs,
+) -> Result<()> {
     let symbols = Symbol::parse_list(raw)?;
     let bench = if none || benchmark.eq_ignore_ascii_case("none") {
         None
@@ -446,7 +515,11 @@ async fn returns(ctx: &Context, raw: &[String], benchmark: &str, none: bool) -> 
     };
     let result = service::returns(ctx.provider.as_ref(), &symbols, bench.as_ref()).await?;
     emit(ctx, SCHEMA_RETURNS, result, |d| {
-        reports::returns(d, ctx.color)
+        if chart.is_on() {
+            chrt::returns(d, chart, ctx.color)
+        } else {
+            reports::returns(d, ctx.color)
+        }
     })
 }
 
@@ -480,10 +553,14 @@ async fn technical(ctx: &Context, raw: &str, period: Period) -> Result<()> {
     })
 }
 
-async fn compare(ctx: &Context, raw: &[String]) -> Result<()> {
+async fn compare(ctx: &Context, raw: &[String], chart: &ChartArgs) -> Result<()> {
     let symbols = Symbol::parse_list(raw)?;
     let result = service::compare(ctx.provider.as_ref(), &symbols).await?;
     emit(ctx, SCHEMA_COMPARE, result, |d| {
-        reports::compare(d, ctx.color)
+        if chart.is_on() {
+            chrt::compare(d, chart, ctx.color)
+        } else {
+            reports::compare(d, ctx.color)
+        }
     })
 }

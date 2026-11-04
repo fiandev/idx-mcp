@@ -1,0 +1,23 @@
+{
+  "message": "Successfully get hotlist data",
+  "data": {
+    "result": [
+      {
+        "symbol": "GOTO",
+        "name": "GoTo Gojek Tokopedia Tbk.",
+        "last": 54,
+        "change": -6,
+        "percent": -10.0,
+        "volume": 91204500
+      },
+      {
+        "symbol": "ASII",
+        "name": "Astra International Tbk.",
+        "last": 4900,
+        "change": -100,
+        "percent": -2.0,
+        "volume": 1845000
+      }
+    ]
+  }
+}

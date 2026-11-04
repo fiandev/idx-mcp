@@ -1,0 +1,31 @@
+{
+  "message": "Successfully loaded running trade data",
+  "data": [
+    {
+      "id": "9",
+      "symbol": "BBCA",
+      "price": 5175,
+      "volume": 2644,
+      "action": "S",
+      "time": "2026-10-16 15:49:59",
+      "buyer": "BB",
+      "seller": "ZP"
+    },
+    {
+      "id": "8",
+      "symbol": "BBCA",
+      "price": 5175,
+      "volume": 100,
+      "action": "B",
+      "time": "2026-10-16 15:49:58",
+      "buyer": "YP",
+      "seller": "CC"
+    },
+    {
+      "id": "7",
+      "symbol": "BBCA",
+      "price": 5175,
+      "volume": 50
+    }
+  ]
+}

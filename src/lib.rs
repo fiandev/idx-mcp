@@ -13,6 +13,7 @@
 //! - [`holidays`]  IDX trading holidays (bundled) and trading-day arithmetic
 //! - [`model`]     provider-agnostic domain types (the JSON contract)
 //! - [`output`]    table and JSON renderers
+//! - [`tui`]       the interactive board behind `idx stockbit monitor`
 //! - [`http`]      fetcher that puts the cache in front of the network
 //! - [`progress`]  the CLI's loading line on stderr while requests are in flight
 //! - [`cache`]     content-addressed file cache
@@ -33,6 +34,7 @@ pub mod ownership;
 pub mod progress;
 pub mod providers;
 pub mod service;
+pub mod tui;
 pub mod universe;
 
 pub use error::{IdxError, Result};
